@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI to Arduino Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+        }
+        input[type="file"] {
+            margin: 20px 0;
+        }
+        textarea {
+            width: 100%;
+            height: 300px;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>MIDI to Arduino Code Converter</h1>
+    <input type="file" id="midiFileInput" accept=".mid">
+    <button onclick="convertMIDI()">Convert to Arduino Code</button>
+    <textarea id="output" readonly placeholder="The Arduino code will appear here..."></textarea>
+
+    <script>
+        function convertMIDI() {
+            const fileInput = document.getElementById('midiFileInput');
+            const output = document.getElementById('output');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a MIDI file first!');
+                return;
+            }
+
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const arrayBuffer = event.target.result;
+                parseMIDI(new Uint8Array(arrayBuffer));
+            };
+
+            reader.readAsArrayBuffer(file);
+
+            function parseMIDI(data) {
+                const NOTE_ON = 0x90;
+                const NOTE_OFF = 0x80;
+                const TEMPO_META = 0x51;
+
+                let arduinoCode = `// Auto-generated Arduino code\n\n`;
+
+                arduinoCode += `void setup() {\n`;
+                arduinoCode += `  // Setup your output pins here\n`;
+                arduinoCode += `}\n\n`;
+                arduinoCode += `void loop() {\n`;
+
+                let i = 0;
+                let tempo = 500000; // Default tempo 120 BPM
+                let tickDuration = 0;
+
+                while (i < data.length) {
+                    const eventType = data[i];
+
+                    if (eventType === 0xFF) { // Meta Event
+                        const metaType = data[i + 1];
+                        const length = data[i + 2];
+                        if (metaType === TEMPO_META) {
+                            tempo = (data[i + 3] << 16) | (data[i + 4] << 8) | data[i + 5];
+                            tickDuration = tempo / 500000.0; // Tick duration in seconds
+                        }
+                        i += 3 + length;
+                    } else if ((eventType & 0xF0) === NOTE_ON || (eventType & 0xF0) === NOTE_OFF) {
+                        const channel = eventType & 0x0F;
+                        const note = data[i + 1];
+                        const velocity = data[i + 2];
+                        const isNoteOn = (eventType & 0xF0) === NOTE_ON && velocity > 0;
+
+                        arduinoCode += `  playNote${isNoteOn ? 'On' : 'Off'}(${note});\n`;
+
+                        // Calculate the delay time based on the delta-time
+                        const deltaTime = (data[i - 1] << 8) | data[i - 2]; // Not accurate, depends on running status
+                        const waitTime = deltaTime * tickDuration;
+
+                        arduinoCode += `  delay(${Math.round(waitTime * 1000)});\n`;
+
+                        i += 3;
+                    } else {
+                        i++;
+                    }
+                }
+
+                arduinoCode += `}\n`;
+
+                output.value = arduinoCode;
+            }
+        }
+
+        function playNoteOn(note) {
+            // Your Arduino code for turning a note on
+            console.log(`Playing note ${note}`);
+        }
+
+        function playNoteOff(note) {
+            // Your Arduino code for turning a note off
+            console.log(`Stopping note ${note}`);
+        }
+    </script>
+</body>
+</html>
